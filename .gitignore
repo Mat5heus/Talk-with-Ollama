@@ -1,4 +1,9 @@
+# .gitignore
 main.py
 UiOllamaAssistant
 .venv
-
+.env
+*.env*
+main-test.py
+__pycache__/
+requirements.txt
