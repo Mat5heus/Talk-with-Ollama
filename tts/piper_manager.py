@@ -24,7 +24,7 @@ class PiperManager:
                 
                 # Cria novos processos
                 self.piper_process = subprocess.Popen(
-                    ['piper', '--model', model_path, '--output-raw'],
+                    ['piper', '--model', model_path, '--output-raw', '-s', '1'],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
