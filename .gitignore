@@ -5,3 +5,4 @@ UiOllamaAssistant
 *.env*
 main-test.py
 __pycache__/
+sounds/*
