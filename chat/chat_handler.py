@@ -304,15 +304,6 @@ class ChatHandler:
                     for chunk in ollama_client.gerar_resposta_ollama(mensagens, modelo_selecionado):
                         print(chunk, end="", flush=True)
                         full_response += chunk
-                        
-                        # 7. Processamento de áudio
-                        self._atualizar_modelo_tts(full_response)
-                        idioma = helpers.detectar_idioma(full_response)
-                        
-                        if re.search(r'[.!?]\s*$', buffer_texto):
-                            self._processar_buffer_tts(buffer_texto, idioma)
-                            buffer_texto = ""
-
 
                 # 9. Finalizar processamento
                 self._processar_buffer_tts(buffer_texto, idioma)
