@@ -19,43 +19,18 @@ class ChatHandler:
         self.sound_player = SoundPlayer()
         self.piper_manager = PiperManager()
         self.text_processor = TextProcessor()
-        self.current_language_model = None  # Rastreia o modelo TTS atual
         self.tavily_client = TavilyService()  # Substitua TavilyClient por TavilyService
-        self.search_context = ""  # Armazena contexto de pesquisas
         self.original_terminal_settings = None  # Armazenará as configurações originais
         self._setup_signal_handlers()
-        self.tool_responses = []  # Armazena resultados de ferramentas
-       
-    def _processar_resposta_modelo(self, resposta_bruta):
-        """Detecta e executa chamadas de ferramentas"""
-        try:
-            # # Tenta parsear JSON da resposta
-            # tool_call = json.loads(resposta_bruta.strip())
-            # if tool_call.get("name") == "search_on_web":
-            #     query = tool_call.get("parameters", {}).get("query")
-            #     return self._executar_pesquisa(query)
-            tool_call = json.loads(resposta_bruta.strip())
-            if tool_call.get("name") == "search_on_web":
-                query = tool_call.get("parameters", {}).get("query")
-                resultados = self._executar_pesquisa(query)
-                
-                # Envia answer + fontes como contexto estruturado
-                return json.dumps({
-                    "type": "research_result",
-                    "answer": resultados["answer"],
-                    "sources": resultados["sources"]
-                })
-        except json.JSONDecodeError:
-            # Se não for JSON, retorna resposta normal
-            return resposta_bruta
-        except Exception as e:
-            return f"[ERRO: {str(e)}]"
+
 
     def _executar_pesquisa(self, tool_call):
         """Executa pesquisa e formata resultados"""
         if tool_call.get("name") == "search_on_web":
             query = tool_call.get("parameters", {}).get("query")
-            resultados = self.tavily_client.pesquisar(query)
+            search_type = tool_call.get("parameters", {}).get("search_type")
+            time_range = tool_call.get("parameters", {}).get("time_range")
+            resultados = self.tavily_client.pesquisar(query, search_type=search_type, time_range=time_range)
             
             if not resultados:
                 return "Nenhum resultado encontrado."
@@ -84,87 +59,162 @@ class ChatHandler:
         signal.signal(signal.SIGINT, self._handle_exit)  # Usar _handle_exit ao invés de _handle_signal
         signal.signal(signal.SIGTERM, self._handle_exit)
 
-    def _handle_signal(self, signum, frame):
-        """Restaura o terminal antes de sair"""
-        self._restore_terminal()
-        sys.exit(1)
-
     def _save_terminal_settings(self):
         """Salva as configurações originais do terminal"""
         self.original_terminal_settings = termios.tcgetattr(sys.stdin)
 
+    # def _detectar_chamada_ferramenta(self, resposta):
+    #     """Detecta chamadas de ferramentas incluindo formatos JSON complexos"""
+    #     try:
+    #         # Verifica se a função está mencionada em qualquer formato
+    #         if not re.search(r'\bsearch_on_web\b', resposta, re.IGNORECASE):
+    #             return None
+
+    #         # Dicionário para armazenar os parâmetros encontrados
+    #         params = {
+    #             "query": None,
+    #             "search_type": "general",
+    #             "time_range": "none"
+    #         }
+
+    #         # Padrão abrangente para capturar parâmetros em diferentes formatos
+    #         param_patterns = [
+    #             (r'"query"\s*:\s*["\']?([^"\'{}]+)', 'query'),
+    #             (r'(?:"search_type"|tipo)\s*[:=]\s*["\']?([^"\'{},]+)', 'search_type'),
+    #             (r'(?:"time_range"|periodo)\s*[:=]\s*["\']?([^"\'{},]+)', 'time_range'),
+    #             (r'\{.*?"parameters"\s*:\s*\{.*?"query"\s*:\s*"([^"]+).*?\}.*?\}', 'query'),  # JSON profundo
+    #             (r'\[.*?\{.*?"name"\s*:\s*"search_on_web".*?\}.*?\]', None)  # Captura todo o array JSON
+    #         ]
+
+    #         # Busca por todos os parâmetros usando múltiplos padrões
+    #         for pattern, param_name in param_patterns:
+    #             matches = re.finditer(pattern, resposta, re.IGNORECASE | re.DOTALL)
+    #             for match in matches:
+    #                 if param_name is None:  # Caso especial para processamento de JSON completo
+    #                     json_block = match.group(0)
+    #                     # Extrai parâmetros do bloco JSON
+    #                     for json_pattern, json_param in [
+    #                         (r'"query"\s*:\s*"([^"]+)', 'query'),
+    #                         (r'"time_range"\s*:\s*"([^"]+)', 'time_range'),
+    #                         (r'"search_type"\s*:\s*"([^"]+)', 'search_type')
+    #                     ]:
+    #                         json_match = re.search(json_pattern, json_block, re.IGNORECASE)
+    #                         if json_match:
+    #                             params[json_param] = json_match.group(1).strip('"\' ')
+    #                 elif match.group(1):
+    #                     value = match.group(1).strip('"\':, ')
+    #                     if value:
+    #                         params[param_name] = value
+
+    #         # Limpeza e normalização
+    #         params["query"] = re.sub(r'[“”]', '', params["query"]).strip() if params["query"] else None
+            
+    #         # Validação dos valores
+    #         valid_search_types = {"news", "finance", "general"}
+    #         params["search_type"] = params["search_type"].lower()
+    #         if params["search_type"] not in valid_search_types:
+    #             params["search_type"] = "general"
+
+    #         valid_time_ranges = {"none", "day", "week", "month", "year"}
+    #         params["time_range"] = params["time_range"].lower()
+    #         if params["time_range"] not in valid_time_ranges:
+    #             params["time_range"] = "none"
+
+    #         # Verificação do parâmetro obrigatório
+    #         if not params["query"]:
+    #             return None
+
+    #         return {
+    #             "name": "search_on_web",
+    #             "parameters": {
+    #                 "query": params["query"],
+    #                 "search_type": params["search_type"],
+    #                 "time_range": params["time_range"]
+    #             }
+    #         }
+
+    #     except Exception as e:
+    #         print(f"Erro na detecção de tool call: {e}")
+    #         return None
+
     def _detectar_chamada_ferramenta(self, resposta):
-        """Detecta tool calls de forma flexível, sem depender de JSON válido"""
+        """Detecta apenas a primeira ocorrência válida e ignora blocos subsequentes"""
         try:
-           # Passo 1: Encontra os blocos do tool call ou JSON
-            tool_call_match = re.search(
-                r'<\|tool_call\|>(.*?)<\|/tool_call\|>',
-                resposta,
-                re.DOTALL
-            )
-
-            json_call_match = re.search(
-                r'(\[.*?\]).*?(\{.*?\})',  # Captura [ ] e { } separadamente
-                resposta,
-                re.DOTALL
-            )
-
-            if not (tool_call_match or json_call_match):
+            # Encontra a PRIMEIRA ocorrência da palavra-chave
+            first_occurrence = re.search(r'\bsearch_on_web\b', resposta, re.IGNORECASE)
+            if not first_occurrence:
                 return None
 
-            # Passo 2: Decidir qual conteúdo processar
-            if tool_call_match:
-                content = tool_call_match.group(1)
-            elif json_call_match:
-                # Combina conteúdo de [ ] e { ] (grupos 1 e 2)
-                content = f"{json_call_match.group(1)}{json_call_match.group(2)}"
+            params = {
+                "query": None,
+                "search_type": "general",
+                "time_range": "none"
+            }
 
-            # Passo 3: Verificar se é uma chamada para 'search_on_web'
-            if "search_on_web" not in content:
-                return None
+            # Padrões prioritários para extração imediata
+            priority_patterns = [
+                # Padrão 1: Parâmetros estruturados próximos à keyword
+                r'search_on_web[^\{]*\{([^\}]+)\}',
+                # Padrão 2: Parâmetros inline
+                r'\(([^\)]+)\)'
+            ]
 
-            # Passo 4: Extração flexível da query
-            query = None
+            extracted = False
+            
+            # Primeira fase: Busca por padrões estruturados próximos
+            for pattern in priority_patterns:
+                match = re.search(pattern, resposta, re.IGNORECASE)
+                if match:
+                    param_block = match.group(1)
+                    # Extrai pares chave-valor do bloco
+                    pairs = re.findall(r'(\w+)\s*[:=]\s*["\']?([^"\'\),]+)', param_block)
+                    for key, value in pairs:
+                        key = key.lower().strip()
+                        value = value.strip(' "\'')
+                        if key in params:
+                            params[key] = value
+                    if params["query"]:
+                        extracted = True
+                        break  # Para após primeira extração válida
 
-            # Tentativa 1: Extração via JSON estruturado
-            json_pattern = r'"query":\s*"([^"]+)"'
-            json_match = re.search(json_pattern, content, re.DOTALL)
-            if json_match:
-                query = json_match.group(1).strip()
-
-            # Tentativa 2: Extração via padrões semi-estruturados (fallback)
-            if not query:
-                fallback_patterns = [
-                    r"query=['‘’“”]([^'’“”]+)['‘’“”]",
-                    r'termos?[\s:=]+["\']?([^"\'\n]+)',
-                    r'busca por (.*?)(?=\n|$|\))'
+            # Segunda fase: Busca textual se necessário
+            if not extracted:
+                # Procura padrões informais APENAS no contexto isolado
+                informal_patterns = [
+                    r'query\s*[=:]\s*["\']?([^"\'\,\s]+)',
+                    r'["\']([^"\'\)]+)["\']\s*[,\)]'
                 ]
-                for pattern in fallback_patterns:
-                    match = re.search(pattern, content, re.IGNORECASE)
+                for pattern in informal_patterns:
+                    match = re.search(pattern, resposta)
                     if match:
-                        query = match.group(1).strip()
+                        params["query"] = match.group(1).strip()
                         break
 
-            # Passo 5: Limpeza e retorno
-            if query:
-                query = re.sub(r'[”“]', '', query)  # Remove aspas inteligentes
-                return {
-                    "name": "search_on_web",
-                    "parameters": {"query": query}
+            # Validação e limpeza
+            params["query"] = re.sub(r'[“”]', '', params["query"]).strip() if params["query"] else None
+            
+            if not params["query"]:
+                return None
+
+            return {
+                "name": "search_on_web",
+                "parameters": {
+                    "query": params["query"],
+                    "search_type": params["search_type"],
+                    "time_range": params["time_range"]
                 }
+            }
 
+        except Exception as e:
+            print(f"Erro na detecção de tool call: {e}")
             return None
-
-        except (json.JSONDecodeError, KeyError, IndexError) as e:
-            print(f"Erro ao processar tool call: {e}")
-            return None
-
+    
     def _restore_terminal(self):
         """Restaura o terminal para o estado original"""
         if self.original_terminal_settings:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.original_terminal_settings)
         # Força limpeza dos processos
-        self.piper_manager._kill_processes()
+        #self.piper_manager._kill_processes()
 
     def _atualizar_modelo_tts(self, texto):
         """Atualiza o modelo TTS com base no idioma detectado."""
@@ -172,32 +222,9 @@ class ChatHandler:
         caminho_modelo = config.PIPER_MODELS.get(idioma, config.PIPER_MODELS["default"])
         
         # Sempre atualiza o modelo e verifica se os processos estão ativos
-        self.current_language_model = caminho_modelo
         self.piper_manager.start_processes(caminho_modelo)
         time.sleep(0.2)  # Pausa para inicialização
     
-    def _gerar_contexto_pesquisa(self, query):
-        """Gera contexto de pesquisa para perguntas que requerem dados atualizados"""
-        if not self._requer_pesquisa(query):
-            return ""
-            
-        print("\n🔍 Realizando pesquisa...")
-        resultados = self.tavily_client.pesquisar(query)
-        
-        if not resultados:
-            return "\n[AVISO: Não foi possível obter dados atualizados]"
-        
-        # Formata os resultados
-        contexto = "\n[Contexto de pesquisa atualizado]:\n"
-        contexto += f"- Resposta resumida: {resultados.get('answer', '')}\n"
-        for i, result in enumerate(resultados.get('results', [])[:3]):
-            contexto += f"\nFonte {i+1}:\n"
-            contexto += f"Título: {result.get('title', '')}\n"
-            contexto += f"Conteúdo: {result.get('content', '')}\n"
-            contexto += f"URL: {result.get('url', '')}\n"
-        
-        self.search_context = contexto
-        return contexto
 
     def _processar_buffer_tts(self, buffer_texto, idioma):
         """Processa o buffer de texto para TTS."""
@@ -207,6 +234,20 @@ class ChatHandler:
                 idioma = helpers.detectar_idioma(buffer_texto) if len(buffer_texto) >= 2 else "pt"
             texto_limpo = self.text_processor.adaptar_texto_para_tts(buffer_texto, idioma)
             self.piper_manager.send_sentence(texto_limpo)
+
+    def chat_handler(self):
+        try:
+            user_input = input("\nVocê (entrada manual): ")
+            
+            # Tentativa fallida para decodificar a entrada do usuário, captura o exceção.
+            decoded_input = user_input.encode('utf-8').decode('utf-8', 'replace').strip()
+            print(f"Entrada processada: {decoded_input}")
+            return decoded_input
+        except Exception as e:
+            self._restore_terminal()
+            # os.system('stty sane')
+            print(f"Erro na entrada manual: {e}")
+
 
     def obter_entrada_usuario(self):
         """Obtém entrada do usuário via API ou manual."""
@@ -236,18 +277,22 @@ class ChatHandler:
         except Exception as e:
             self._restore_terminal()
             # os.system('stty sane')
-            return input("\nVocê (entrada manual): ")
+            return self.chat_handler() #input("\nVocê (entrada manual): ")
         finally:
             self._restore_terminal()
             # Adicione estas linhas para forçar reset do terminal
-            #os.system('stty sane')  # Linux/Mac
+            os.system('stty sane')  # Linux/Mac
             #os.system('reset')      # Força reset completo
+
+
 
     def _executar_loop_conversa(self, modelo_selecionado):
         """Gerencia o loop principal da conversa."""
         os.system('reset')
         mensagens = []
-        print("\nChat iniciado! Pressione Ctrl+C para encerrar.\n")
+        mensagens.append({"role": "system", "content": config.SYSTEM_INSTRUCTION})
+        #mensagens.append({"role": "tool", "content": config.TOOL_SCHEMA})
+        print("\nChat iniciado! Pressione Ctrl+C para encerrar.\n", flush=True)  # Forçar flush
         
         try:
             while True:
@@ -256,69 +301,79 @@ class ChatHandler:
                 if not entrada_usuario.strip():
                     continue
 
-                # 2. Adicionar mensagens ao histórico
-                mensagens.extend([
-                    {"role": "user", "content": entrada_usuario}
-                ])
+                # 2. Adicionar ao histórico
+                mensagens.append({"role": "user", "content": entrada_usuario})
                 
-                # 3. Gerar resposta inicial do modelo
-                print("\nAssistente: ", end="", flush=True)
+                # 3. Gerar resposta do modelo
+                print("\nAssistente: ", end="", flush=True)  # Forçar flush
                 full_response = ""
                 buffer_texto = ""
                 pesquisa_realizada = False
 
+                # Loop de geração principal
                 for chunk in ollama_client.gerar_resposta_ollama(mensagens, modelo_selecionado):
-                    resposta_processada = self._processar_resposta_modelo(chunk)
-                    full_response += resposta_processada
-
-                    # 4. Processar cada chunk de resposta
-                    print(chunk, end="", flush=True)
                     full_response += chunk
+                    
+                    # Exibir no terminal IMEDIATAMENTE
+                    print(chunk, end="", flush=True)  # Flush explícito
                     buffer_texto += chunk
 
-                    # 5. Verificar chamada de ferramenta
+                    # Verificar tool call
                     if not pesquisa_realizada:
                         tool_call = self._detectar_chamada_ferramenta(full_response)
                         if tool_call:
-                            # 6. Executar pesquisa e atualizar contexto
+                            #Novo: Indicador de pesquisa iniciando
+                            print("\n\n🌐 Buscando informações atualizadas...", end="\r", flush=True)
                             resultados = self._executar_pesquisa(tool_call)
-                            print(f"\nResultados da API: {resultados}")
+                            #Novo: Indicador de pesquisa concluída
+                            print("✅ Pesquisa concluída! Processando...".ljust(50), flush=True)
                             if resultados:
-                                mensagens.append({
-                                    "role": "tool",
-                                    "content": resultados
-                                })
+                                mensagens.append({"role": "tool", "content": resultados})
                                 pesquisa_realizada = True
-                                #break  # Reinicia o loop para nova geração
+                                break  # Interrompe a geração atual para nova consulta
 
-                    # 7. Processamento de áudio
+                    # Processar TTS
                     self._atualizar_modelo_tts(full_response)
                     idioma = helpers.detectar_idioma(full_response)
                     
+                    # Enviar para TTS quando houver pausa natural
                     if re.search(r'[.!?]\s*$', buffer_texto):
                         self._processar_buffer_tts(buffer_texto, idioma)
                         buffer_texto = ""
 
-                # 8. Se pesquisa foi realizada, gerar resposta final
+                # 4. Se houve pesquisa, gerar resposta final
                 if pesquisa_realizada:
+                    print("\n🔍 Resposta com base na pesquisa:", end="", flush=True)  # Novo prompt
+                    full_response = ""
+                    buffer_texto = ""
+                    
                     for chunk in ollama_client.gerar_resposta_ollama(mensagens, modelo_selecionado):
-                        print(chunk, end="", flush=True)
+                        print(chunk, end="", flush=True)  # Exibir cada chunk
                         full_response += chunk
+                        buffer_texto += chunk
 
-                # 9. Finalizar processamento
+                        # Processar TTS
+                        self._atualizar_modelo_tts(full_response)
+                        idioma = helpers.detectar_idioma(full_response)
+                        
+                        if re.search(r'[.!?]\s*$', buffer_texto):
+                            self._processar_buffer_tts(buffer_texto, idioma)
+                            buffer_texto = ""
+
+                # 5. Finalizar processamento
                 self._processar_buffer_tts(buffer_texto, idioma)
                 self.piper_manager.wait_for_completion()
                 
-                # 10. Atualizar histórico
+                # 6. Atualizar histórico
                 mensagens.append({"role": "assistant", "content": full_response})
-                print("\n")
+                print("\n")  # Nova linha após resposta
 
-        except Exception as e:  # Adicione este bloco para capturar quaisquer exceções
-            print(f"\nErro: {e}")
+        except Exception as e:
+            print(f"\n[ERRO] Falha ao exibir resposta: {str(e)}", flush=True)
         finally:
-            self._restore_terminal()  # Garante restauração
+            self._restore_terminal()
             self.sound_player.play_sound("exit")
-            time.sleep(1)
+
     
 
     def iniciar_chat(self):

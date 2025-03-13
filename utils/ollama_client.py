@@ -18,7 +18,7 @@ def gerar_resposta_ollama(mensagens, modelo_selecionado):
     dados = {
         "model": modelo_selecionado,
         "messages": mensagens,
-        #"tools":[config.TOOL_SCHEMA],
+        "tools":[config.TOOL_SCHEMA],
         "stream": True
     }
 
